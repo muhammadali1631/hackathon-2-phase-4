@@ -1,0 +1,113 @@
+# Development Environment Overrides
+# Use with: helm install todo-app . -f values-dev.yaml
+
+# Development-specific image settings
+frontend:
+  image:
+    repository: todo-frontend
+    tag: "dev"
+    pullPolicy: Never  # Use local images in dev
+
+  # Lower resource limits for development
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+
+  # More replicas for testing scaling
+  replicaCount: 1
+
+  # Development-specific environment variables
+  env:
+    NODE_ENV: "development"
+    LOG_LEVEL: "debug"
+
+backend:
+  image:
+    repository: todo-backend
+    tag: "dev"
+    pullPolicy: Never  # Use local images in dev
+
+  # Lower resource limits for development
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "150m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  # More replicas for testing scaling
+  replicaCount: 1
+
+  # Development-specific environment variables
+  env:
+    ENVIRONMENT: "development"
+    LOG_LEVEL: "DEBUG"
+    DEBUG: "true"
+
+# Development ingress settings
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: todo.local
+      paths:
+        - path: /
+          pathType: Prefix
+          backend: frontend
+        - path: /api
+          pathType: Prefix
+          backend: backend
+
+# Development secrets (use kubectl create secret manually)
+secrets:
+  # These should be set via --set flags or environment variables
+  betterAuthSecret: ""
+  cohereApiKey: ""
+  databaseUrl: ""
+
+# Development-specific service settings
+service:
+  type: ClusterIP
+  frontend:
+    port: 80
+  backend:
+    port: 8000
+
+# Development annotations for debugging
+podAnnotations:
+  dev.environment: "local"
+  dev.minikube: "true"
+
+# Disable security contexts for easier debugging (NOT for production)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+# Enable verbose health checks for debugging
+healthCheck:
+  enabled: true
+  liveness:
+    initialDelaySeconds: 10  # Faster startup in dev
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5   # Faster startup in dev
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Development-specific tolerations (none needed for Minikube)
+tolerations: []
+
+# Development-specific affinity (none needed for single-node)
+affinity: {}
+
+# Development-specific node selector (none needed for Minikube)
+nodeSelector: {}

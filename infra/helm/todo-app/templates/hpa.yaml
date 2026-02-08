@@ -1,0 +1,326 @@
+{{- if .Values.autoscaling.enabled }}
+---
+# Horizontal Pod Autoscaler for Frontend
+# Automatically scales frontend pods based on CPU and memory usage
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "todo-app.fullname" . }}-frontend-hpa
+  labels:
+    {{- include "todo-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "todo-app.fullname" . }}-frontend
+  minReplicas: {{ .Values.autoscaling.frontend.minReplicas | default 3 }}
+  maxReplicas: {{ .Values.autoscaling.frontend.maxReplicas | default 10 }}
+  metrics:
+  {{- if .Values.autoscaling.frontend.targetCPUUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.autoscaling.frontend.targetCPUUtilizationPercentage }}
+  {{- end }}
+  {{- if .Values.autoscaling.frontend.targetMemoryUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.autoscaling.frontend.targetMemoryUtilizationPercentage }}
+  {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+      - type: Percent
+        value: 50  # Scale down by max 50% of current pods
+        periodSeconds: 60
+      - type: Pods
+        value: 2   # Scale down by max 2 pods at a time
+        periodSeconds: 60
+      selectPolicy: Min  # Use the policy that scales down the least
+    scaleUp:
+      stabilizationWindowSeconds: 0  # Scale up immediately when needed
+      policies:
+      - type: Percent
+        value: 100  # Scale up by max 100% of current pods
+        periodSeconds: 30
+      - type: Pods
+        value: 4    # Scale up by max 4 pods at a time
+        periodSeconds: 30
+      selectPolicy: Max  # Use the policy that scales up the most
+
+---
+# Horizontal Pod Autoscaler for Backend
+# Automatically scales backend pods based on CPU and memory usage
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "todo-app.fullname" . }}-backend-hpa
+  labels:
+    {{- include "todo-app.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "todo-app.fullname" . }}-backend
+  minReplicas: {{ .Values.autoscaling.backend.minReplicas | default 3 }}
+  maxReplicas: {{ .Values.autoscaling.backend.maxReplicas | default 20 }}
+  metrics:
+  {{- if .Values.autoscaling.backend.targetCPUUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.autoscaling.backend.targetCPUUtilizationPercentage }}
+  {{- end }}
+  {{- if .Values.autoscaling.backend.targetMemoryUtilizationPercentage }}
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.autoscaling.backend.targetMemoryUtilizationPercentage }}
+  {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 minutes before scaling down
+      policies:
+      - type: Percent
+        value: 50  # Scale down by max 50% of current pods
+        periodSeconds: 60
+      - type: Pods
+        value: 3   # Scale down by max 3 pods at a time
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 0  # Scale up immediately when needed
+      policies:
+      - type: Percent
+        value: 100  # Scale up by max 100% of current pods
+        periodSeconds: 30
+      - type: Pods
+        value: 5    # Scale up by max 5 pods at a time
+        periodSeconds: 30
+      selectPolicy: Max
+
+{{- end }}
+
+{{/*
+HORIZONTAL POD AUTOSCALER (HPA) CONFIGURATION GUIDE
+====================================================
+
+## What is HPA?
+HPA automatically scales the number of pods in a deployment based on observed metrics
+(CPU, memory, or custom metrics). This ensures your application can handle varying load
+without manual intervention.
+
+## Prerequisites
+1. Metrics Server must be installed in the cluster:
+   kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+2. Pods must have resource requests defined (already configured in values.yaml)
+
+3. For Minikube, enable metrics-server addon:
+   minikube addons enable metrics-server
+
+## How to Enable HPA
+
+### Option 1: Enable in values.yaml (recommended for production)
+Add to values.yaml:
+
+```yaml
+autoscaling:
+  enabled: true
+  frontend:
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  backend:
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+```
+
+### Option 2: Enable via --set flag
+```bash
+helm upgrade todo-app . \
+  --set autoscaling.enabled=true \
+  --set autoscaling.frontend.minReplicas=3 \
+  --set autoscaling.frontend.maxReplicas=10 \
+  --set autoscaling.backend.minReplicas=3 \
+  --set autoscaling.backend.maxReplicas=20
+```
+
+### Option 3: Use values-prod.yaml (already configured)
+```bash
+helm install todo-app . -f values-prod.yaml
+```
+
+## How HPA Works
+
+1. **Metrics Collection**: HPA queries metrics-server every 15 seconds (default)
+2. **Calculation**: Compares current metric value to target value
+3. **Scaling Decision**: Scales up/down to meet target utilization
+4. **Cooldown**: Waits for stabilization before next scaling action
+
+### Scaling Formula
+```
+desiredReplicas = ceil[currentReplicas * (currentMetricValue / targetMetricValue)]
+```
+
+Example:
+- Current: 3 replicas at 90% CPU
+- Target: 70% CPU
+- Desired: ceil[3 * (90 / 70)] = ceil[3.86] = 4 replicas
+
+## Configuration Parameters
+
+### minReplicas
+- Minimum number of pods to maintain
+- Recommended: 3 for production (high availability)
+- Never scales below this number
+
+### maxReplicas
+- Maximum number of pods allowed
+- Prevents runaway scaling
+- Consider cluster capacity and cost
+
+### targetCPUUtilizationPercentage
+- Target average CPU utilization across all pods
+- Recommended: 70% (leaves headroom for spikes)
+- Too low: wastes resources
+- Too high: poor performance during spikes
+
+### targetMemoryUtilizationPercentage
+- Target average memory utilization
+- Recommended: 80% (memory is less bursty than CPU)
+- Be careful: memory scaling can cause OOMKilled pods
+
+### Scaling Behavior
+- **scaleUp**: How aggressively to add pods
+  - stabilizationWindowSeconds: 0 (immediate)
+  - Can double pod count every 30 seconds
+
+- **scaleDown**: How conservatively to remove pods
+  - stabilizationWindowSeconds: 300 (5 minutes)
+  - Prevents flapping during temporary load drops
+  - Max 50% reduction per minute
+
+## Monitoring HPA
+
+### Check HPA status
+```bash
+kubectl get hpa
+kubectl describe hpa todo-app-backend-hpa
+```
+
+### Watch HPA in action
+```bash
+kubectl get hpa -w
+```
+
+### View HPA events
+```bash
+kubectl get events --field-selector involvedObject.name=todo-app-backend-hpa
+```
+
+## Testing HPA
+
+### Generate load on backend
+```bash
+# Install hey (HTTP load generator)
+# macOS: brew install hey
+# Linux: go install github.com/rakyll/hey@latest
+
+# Generate load
+hey -z 5m -c 50 http://todo.local/api/health
+```
+
+### Watch scaling
+```bash
+# Terminal 1: Watch HPA
+kubectl get hpa -w
+
+# Terminal 2: Watch pods
+kubectl get pods -l app.kubernetes.io/component=backend -w
+
+# Terminal 3: Watch resource usage
+watch kubectl top pods -l app.kubernetes.io/component=backend
+```
+
+## Troubleshooting
+
+### HPA shows "unknown" for metrics
+**Problem**: Metrics server not installed or not ready
+**Solution**:
+```bash
+kubectl get deployment metrics-server -n kube-system
+kubectl logs -n kube-system deployment/metrics-server
+```
+
+### HPA not scaling up
+**Problem**: Current utilization below target
+**Check**:
+```bash
+kubectl top pods -l app.kubernetes.io/component=backend
+kubectl describe hpa todo-app-backend-hpa
+```
+
+### HPA not scaling down
+**Problem**: Stabilization window (5 minutes by default)
+**Wait**: HPA waits to ensure load drop is sustained
+
+### Pods being OOMKilled after scaling
+**Problem**: Memory limits too low
+**Solution**: Increase memory limits in values.yaml
+
+## Best Practices
+
+1. **Start Conservative**: Begin with higher min/max values, tune based on observation
+2. **Monitor First**: Run without HPA for a week, analyze patterns
+3. **Set Appropriate Targets**: 70% CPU, 80% memory is a good starting point
+4. **Use Pod Disruption Budgets**: Ensure minimum availability during scaling
+5. **Test Under Load**: Simulate production traffic before going live
+6. **Combine with Cluster Autoscaler**: Scale nodes when pods can't be scheduled
+7. **Alert on Max Replicas**: Know when you hit scaling limits
+8. **Review Regularly**: Adjust based on actual usage patterns
+
+## Cost Considerations
+
+- More replicas = higher cost
+- Balance between performance and cost
+- Use HPA to scale down during low traffic (nights, weekends)
+- Consider spot instances for non-critical workloads
+- Monitor cost with tools like Kubecost
+
+## Production Checklist
+
+- [ ] Metrics server installed and healthy
+- [ ] Resource requests defined for all containers
+- [ ] HPA configured with appropriate min/max replicas
+- [ ] Target utilization percentages set (70% CPU, 80% memory)
+- [ ] Scaling behavior configured (stabilization windows)
+- [ ] Pod disruption budgets configured
+- [ ] Monitoring and alerting set up
+- [ ] Load testing performed
+- [ ] Cost impact analyzed
+- [ ] Runbook created for scaling issues
+
+## Additional Resources
+
+- [Kubernetes HPA Documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
+- [HPA Walkthrough](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/)
+- [Metrics Server](https://github.com/kubernetes-sigs/metrics-server)
+- [Custom Metrics](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-custom-metrics)
+
+*/}}

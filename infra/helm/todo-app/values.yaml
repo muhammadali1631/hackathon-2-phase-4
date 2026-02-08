@@ -1,0 +1,277 @@
+# Default values for todo-app Helm chart
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# IMPORTANT: These are default values optimized for local Minikube deployment
+# For production deployment, use values-prod.yaml or override these values
+# For development, use values-dev.yaml
+
+# Global settings
+global:
+  domain: todo.local  # Change to your actual domain in production
+
+# Frontend configuration
+frontend:
+  enabled: true
+
+  # Replica count
+  # - Local/Dev: 1 replica is sufficient
+  # - Production: Minimum 3 replicas for high availability
+  # - Use HPA (Horizontal Pod Autoscaler) for automatic scaling in production
+  replicaCount: 1
+
+  image:
+    repository: todo-frontend
+    tag: v1.0.0
+    pullPolicy: IfNotPresent  # Use 'Never' for local dev, 'Always' for production with registry
+
+  service:
+    type: ClusterIP  # Use LoadBalancer or NodePort if direct external access needed
+    port: 80
+    targetPort: 3000
+
+  # Resource limits and requests
+  # IMPORTANT: These values are critical for cluster stability and performance
+  #
+  # Requests: Guaranteed resources - used for scheduling decisions
+  # Limits: Maximum resources - pod will be throttled (CPU) or killed (memory) if exceeded
+  #
+  # Current values (optimized for Minikube):
+  # - Memory request: 256Mi (sufficient for Next.js SSR)
+  # - CPU request: 200m (0.2 cores - adequate for moderate traffic)
+  # - Memory limit: 512Mi (prevents OOM on traffic spikes)
+  # - CPU limit: 500m (0.5 cores - allows burst capacity)
+  #
+  # Production recommendations:
+  # - Memory request: 512Mi (more headroom for SSR and caching)
+  # - CPU request: 500m (better performance under load)
+  # - Memory limit: 1Gi (handle traffic spikes without OOM)
+  # - CPU limit: 1000m (1 core - better response times)
+  #
+  # Sizing guidelines:
+  # - Monitor actual usage with: kubectl top pods
+  # - Set requests to ~80% of average usage
+  # - Set limits to ~150% of peak usage
+  # - Adjust based on load testing results
+  resources:
+    requests:
+      memory: "256Mi"  # Minimum guaranteed memory
+      cpu: "200m"      # Minimum guaranteed CPU (200 millicores = 0.2 cores)
+    limits:
+      memory: "512Mi"  # Maximum memory before OOMKilled
+      cpu: "500m"      # Maximum CPU before throttling
+
+  env:
+    NEXT_PUBLIC_BASE_URL: "http://todo.local"
+    NEXT_PUBLIC_API_URL: "http://todo.local/api"
+    NEXT_PUBLIC_BETTER_AUTH_URL: "http://todo.local"
+    NEXT_PUBLIC_BACKEND_URL: "http://todo.local"
+
+  # Health probes - critical for zero-downtime deployments
+  # Liveness: Detects if container is alive (restarts if fails)
+  # Readiness: Detects if container is ready for traffic (removes from service if fails)
+  livenessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 30  # Wait 30s for app startup
+    periodSeconds: 10        # Check every 10s
+    timeoutSeconds: 3        # Timeout after 3s
+    failureThreshold: 3      # Restart after 3 consecutive failures
+
+  readinessProbe:
+    httpGet:
+      path: /
+      port: 3000
+    initialDelaySeconds: 10  # Ready check starts earlier
+    periodSeconds: 5         # Check more frequently
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Backend configuration
+backend:
+  enabled: true
+
+  # Replica count
+  # - Local/Dev: 1 replica is sufficient
+  # - Production: Minimum 3 replicas for high availability
+  # - Backend is stateless and can scale horizontally
+  # - Use HPA for automatic scaling based on CPU/memory
+  replicaCount: 1
+
+  image:
+    repository: todo-backend
+    tag: v1.0.0
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+
+  # Resource limits and requests
+  # IMPORTANT: Backend typically needs more resources than frontend
+  #
+  # Current values (optimized for Minikube):
+  # - Memory request: 512Mi (FastAPI + Python runtime + AI SDK)
+  # - CPU request: 300m (0.3 cores - handles API requests + AI calls)
+  # - Memory limit: 1Gi (prevents OOM during AI processing)
+  # - CPU limit: 1000m (1 core - allows concurrent request processing)
+  #
+  # Production recommendations:
+  # - Memory request: 1Gi (more headroom for concurrent requests)
+  # - CPU request: 750m (better performance for AI API calls)
+  # - Memory limit: 2Gi (handle multiple concurrent AI requests)
+  # - CPU limit: 2000m (2 cores - better throughput)
+  #
+  # Sizing considerations:
+  # - AI API calls (Cohere) can be CPU-intensive during processing
+  # - Database connections require memory overhead
+  # - Concurrent requests scale with CPU availability
+  # - Monitor with: kubectl top pods -l app.kubernetes.io/component=backend
+  #
+  # Performance tuning:
+  # - Increase replicas before increasing per-pod resources
+  # - Use connection pooling for database (already configured)
+  # - Consider caching layer (Redis) for frequently accessed data
+  # - Profile with APM tools (New Relic, Datadog) in production
+  resources:
+    requests:
+      memory: "512Mi"  # Minimum guaranteed memory
+      cpu: "300m"      # Minimum guaranteed CPU (300 millicores = 0.3 cores)
+    limits:
+      memory: "1Gi"    # Maximum memory before OOMKilled
+      cpu: "1000m"     # Maximum CPU before throttling (1000m = 1 core)
+
+  # Health probes - FastAPI provides /health endpoint
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Ingress configuration
+# Routes external traffic to frontend and backend services
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"  # Set to "true" in production with TLS
+    # Production annotations to add:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # nginx.ingress.kubernetes.io/rate-limit: "100"
+    # nginx.ingress.kubernetes.io/cors-allow-origin: "https://yourdomain.com"
+  hosts:
+    - host: todo.local  # Change to your domain in production
+      paths:
+        - path: /api      # Backend API routes
+          pathType: Prefix
+          backend: backend
+        - path: /          # Frontend routes (catch-all)
+          pathType: Prefix
+          backend: frontend
+  tls: []  # Add TLS configuration in production
+
+# Secrets configuration
+# SECURITY WARNING: Never commit actual secrets to version control
+secrets:
+  # These values should be provided via:
+  # 1. --set flags: helm install --set secrets.betterAuthSecret=xxx
+  # 2. Values override file: helm install -f secrets.yaml
+  # 3. External secrets operator (recommended for production)
+  # 4. CI/CD pipeline environment variables
+  betterAuthSecret: ""  # JWT signing secret (generate with: openssl rand -base64 32)
+  cohereApiKey: ""      # Cohere API key from cohere.com
+  databaseUrl: ""       # PostgreSQL connection string (Neon or self-hosted)
+
+# ConfigMap configuration
+# Use for non-sensitive configuration data
+configMap:
+  data: {}
+
+# Security context
+# Runs containers as non-root user for security
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001   # nextjs/appuser UID
+  fsGroup: 1001
+  # Production additions:
+  # readOnlyRootFilesystem: true
+  # allowPrivilegeEscalation: false
+  # capabilities:
+  #   drop:
+  #     - ALL
+
+# Pod annotations
+# Add custom annotations for monitoring, logging, etc.
+podAnnotations: {}
+  # prometheus.io/scrape: "true"
+  # prometheus.io/port: "8000"
+  # prometheus.io/path: "/metrics"
+
+# Node selector
+# Use to schedule pods on specific nodes
+nodeSelector: {}
+  # workload: production
+  # node.kubernetes.io/instance-type: "t3.large"
+
+# Tolerations
+# Allow pods to schedule on nodes with matching taints
+tolerations: []
+  # - key: "workload"
+  #   operator: "Equal"
+  #   value: "production"
+  #   effect: "NoSchedule"
+
+# Affinity
+# Control pod placement for high availability
+affinity: {}
+  # Production recommendation: Use pod anti-affinity to spread replicas across nodes
+  # podAntiAffinity:
+  #   requiredDuringSchedulingIgnoredDuringExecution:
+  #     - labelSelector:
+  #         matchExpressions:
+  #           - key: app.kubernetes.io/name
+  #             operator: In
+  #             values:
+  #               - todo-app
+  #       topologyKey: kubernetes.io/hostname
+
+# Update strategy
+# RollingUpdate ensures zero-downtime deployments
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1         # Create 1 new pod before terminating old ones
+    maxUnavailable: 0   # Never have fewer than desired replicas (zero downtime)
+
+# Production recommendations:
+# 1. Use values-prod.yaml for production overrides
+# 2. Increase replica counts to 3+ for high availability
+# 3. Enable HPA (Horizontal Pod Autoscaler) for automatic scaling
+# 4. Configure pod disruption budgets (minAvailable: 2)
+# 5. Add TLS/HTTPS with cert-manager
+# 6. Use external secrets manager (AWS Secrets Manager, Vault)
+# 7. Enable monitoring with Prometheus + Grafana
+# 8. Configure centralized logging (ELK, Loki)
+# 9. Set up alerting for critical metrics
+# 10. Use pod anti-affinity to spread across nodes/zones
+# 11. Configure network policies for security
+# 12. Enable pod security standards (restricted profile)
+# 13. Use specific image tags (not 'latest')
+# 14. Configure resource quotas at namespace level
+# 15. Regular security scanning and updates
+

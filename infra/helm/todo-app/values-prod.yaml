@@ -1,0 +1,243 @@
+# Production Environment Configuration
+# Use with: helm install todo-app . -f values-prod.yaml
+
+# Production-specific image settings
+frontend:
+  image:
+    repository: your-registry.io/todo-frontend  # Replace with your container registry
+    tag: "1.0.0"  # Use specific version tags, not 'latest'
+    pullPolicy: IfNotPresent
+
+  # Production resource allocation
+  resources:
+    requests:
+      memory: "512Mi"  # Higher than dev for stability
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+  # Multiple replicas for high availability
+  replicaCount: 3  # Minimum 3 for HA
+
+  # Production environment variables
+  env:
+    NODE_ENV: "production"
+    LOG_LEVEL: "info"  # Less verbose than dev
+
+  # Pod disruption budget (prevents all pods from being evicted)
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2  # Always keep at least 2 pods running
+
+backend:
+  image:
+    repository: your-registry.io/todo-backend  # Replace with your container registry
+    tag: "1.0.0"  # Use specific version tags, not 'latest'
+    pullPolicy: IfNotPresent
+
+  # Production resource allocation
+  resources:
+    requests:
+      memory: "1Gi"  # Higher than dev for stability
+      cpu: "750m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+  # Multiple replicas for high availability
+  replicaCount: 3  # Minimum 3 for HA
+
+  # Production environment variables
+  env:
+    ENVIRONMENT: "production"
+    LOG_LEVEL: "INFO"
+    DEBUG: "false"
+
+  # Pod disruption budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2  # Always keep at least 2 pods running
+
+# Production ingress settings with TLS
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"  # Automatic TLS certificates
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"  # Rate limiting
+  hosts:
+    - host: todo.yourdomain.com  # Replace with your domain
+      paths:
+        - path: /
+          pathType: Prefix
+          backend: frontend
+        - path: /api
+          pathType: Prefix
+          backend: backend
+  tls:
+    - secretName: todo-tls-cert
+      hosts:
+        - todo.yourdomain.com
+
+# Production secrets (use external secrets manager)
+# IMPORTANT: Do NOT commit actual secrets to git
+# Use: AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, or Sealed Secrets
+secrets:
+  # Set via CI/CD pipeline or external secrets operator
+  betterAuthSecret: ""  # Injected from secrets manager
+  cohereApiKey: ""      # Injected from secrets manager
+  databaseUrl: ""       # Injected from secrets manager
+
+# Production service settings
+service:
+  type: ClusterIP  # Use LoadBalancer or NodePort if needed
+  frontend:
+    port: 80
+  backend:
+    port: 8000
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"  # AWS NLB (if using AWS)
+
+# Production annotations
+podAnnotations:
+  prometheus.io/scrape: "true"  # Enable Prometheus scraping
+  prometheus.io/port: "8000"
+  prometheus.io/path: "/metrics"
+
+# Production security context (strict)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+  readOnlyRootFilesystem: true  # Immutable filesystem
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# Production health checks (more conservative)
+healthCheck:
+  enabled: true
+  liveness:
+    initialDelaySeconds: 30  # Allow more time for startup
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Production tolerations (for dedicated node pools)
+tolerations:
+  - key: "workload"
+    operator: "Equal"
+    value: "production"
+    effect: "NoSchedule"
+
+# Production affinity (spread across availability zones)
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+                - todo-app
+        topologyKey: kubernetes.io/hostname  # Spread across nodes
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - todo-app
+          topologyKey: topology.kubernetes.io/zone  # Spread across zones
+
+# Production node selector (use dedicated node pool)
+nodeSelector:
+  workload: production
+  node.kubernetes.io/instance-type: "t3.large"  # Adjust based on cloud provider
+
+# Horizontal Pod Autoscaler (HPA) for automatic scaling
+autoscaling:
+  enabled: true
+  frontend:
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  backend:
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# Network policies (restrict pod-to-pod communication)
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443  # HTTPS
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+
+# Monitoring and observability
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Backup and disaster recovery
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention: 30  # Keep 30 days of backups
+
+# Cost optimization
+costOptimization:
+  # Use spot instances for non-critical workloads
+  spotInstances: false  # Set to true for cost savings (with risk)
+
+  # Cluster autoscaler settings
+  clusterAutoscaler:
+    enabled: true
+    minNodes: 3
+    maxNodes: 10
+
+# Production recommendations:
+# 1. Use external secrets manager (AWS Secrets Manager, GCP Secret Manager, Vault)
+# 2. Enable TLS/HTTPS with cert-manager and Let's Encrypt
+# 3. Configure network policies to restrict traffic
+# 4. Use pod security policies/standards (restricted profile)
+# 5. Enable monitoring with Prometheus + Grafana
+# 6. Configure centralized logging (ELK, Loki)
+# 7. Set up alerting (Alertmanager, PagerDuty)
+# 8. Implement backup and disaster recovery procedures
+# 9. Use dedicated node pools for production workloads
+# 10. Configure pod disruption budgets for high availability
+# 11. Enable horizontal pod autoscaling (HPA)
+# 12. Use specific image tags (not 'latest')
+# 13. Configure resource requests and limits appropriately
+# 14. Implement rate limiting and DDoS protection
+# 15. Regular security scanning and vulnerability assessments

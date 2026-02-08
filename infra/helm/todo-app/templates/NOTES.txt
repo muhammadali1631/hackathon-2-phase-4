@@ -1,0 +1,84 @@
+🎉 Todo AI Chatbot has been successfully deployed!
+
+📊 Release Information:
+  Name:      {{ .Release.Name }}
+  Namespace: {{ .Release.Namespace }}
+  Version:   {{ .Chart.Version }}
+
+🚀 Getting Started:
+
+1. Check the deployment status:
+   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Wait for all pods to be ready:
+   kubectl wait --for=condition=ready pod -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }} --timeout=300s
+
+3. Get the application URL:
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+   http://{{ .host }}
+{{- end }}
+
+   ⚠️  Make sure to add the following entry to your /etc/hosts file:
+
+   $(minikube ip) {{ (index .Values.ingress.hosts 0).host }}
+
+   On Windows: C:\Windows\System32\drivers\etc\hosts
+   On Linux/macOS: /etc/hosts (requires sudo)
+
+{{- else }}
+   export POD_NAME=$(kubectl get pods -n {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "todo-app.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=frontend" -o jsonpath="{.items[0].metadata.name}")
+   kubectl port-forward $POD_NAME 3000:3000 -n {{ .Release.Namespace }}
+
+   Visit http://localhost:3000
+{{- end }}
+
+📝 Useful Commands:
+
+  # View frontend logs
+  kubectl logs -f deployment/{{ include "todo-app.fullname" . }}-frontend -n {{ .Release.Namespace }}
+
+  # View backend logs
+  kubectl logs -f deployment/{{ include "todo-app.fullname" . }}-backend -n {{ .Release.Namespace }}
+
+  # Check service status
+  kubectl get svc -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+  # Check ingress status
+  kubectl get ingress -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+  # Scale backend replicas
+  kubectl scale deployment/{{ include "todo-app.fullname" . }}-backend --replicas=3 -n {{ .Release.Namespace }}
+
+  # Restart deployments
+  kubectl rollout restart deployment/{{ include "todo-app.fullname" . }}-frontend -n {{ .Release.Namespace }}
+  kubectl rollout restart deployment/{{ include "todo-app.fullname" . }}-backend -n {{ .Release.Namespace }}
+
+🔍 Troubleshooting:
+
+  # Check pod events
+  kubectl describe pod <pod-name> -n {{ .Release.Namespace }}
+
+  # Check resource usage
+  kubectl top pods -n {{ .Release.Namespace }}
+
+  # View all resources
+  kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+📚 Documentation:
+  - README: https://github.com/your-org/todo-app/blob/main/README.md
+  - Issues: https://github.com/your-org/todo-app/issues
+
+💡 Tips:
+  - The application uses external Neon PostgreSQL database
+  - AI chatbot powered by Cohere API
+  - Health checks available at /health (backend) and / (frontend)
+  - All secrets are stored in Kubernetes Secret: {{ include "todo-app.secretName" . }}
+
+🎯 Next Steps:
+  1. Access the application via the URL above
+  2. Sign up for a new account
+  3. Try the AI chatbot: "Add a task to buy groceries"
+  4. Explore the Tasks and Profile pages
+
+Happy task managing! 🚀
