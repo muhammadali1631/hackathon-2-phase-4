@@ -11,7 +11,7 @@ pip install -r requirements.txt
 ```env
 BETTER_AUTH_SECRET=secret
 BETTER_AUTH_URL=http://localhost:3000
-NEON_DB_URL=postgresql://neondb_owner:npg_5xMPfhq9XgaS@ep-bitter-cloud-adk6f8ds-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+NEON_DB_URL=
 ```
 
 ## Running the Application
@@ -36,4 +36,5 @@ All task endpoints are under `/api/`:
 - `GET /api/tasks/{id}` - Get a specific task
 - `PUT /api/tasks/{id}` - Update a task
 - `PATCH /api/tasks/{id}/complete` - Toggle task completion
+
 - `DELETE /api/tasks/{id}` - Delete a task
